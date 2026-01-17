@@ -1,4 +1,4 @@
-# env-to-ejson
+# ejson-to-env
 
 A minimal, dependency-light bash tool for managing encrypted environment
 variables using RSA public/private key pairs.
@@ -7,7 +7,7 @@ variables using RSA public/private key pairs.
 
 ---
 
-## Why env-to-ejson?
+## Why ejson-to-env?
 
 Managing secrets in configuration files is a common challenge. You want to:
 
@@ -17,7 +17,7 @@ Managing secrets in configuration files is a common challenge. You want to:
 
 This tool was inspired by [Shopify's EJSON](https://github.com/Shopify/ejson),
 which pioneered the concept of asymmetric encryption for config files. We
-built `env-to-ejson` as a lightweight alternative that:
+built `ejson-to-env` as a lightweight alternative that:
 
 - Requires only `bash`, `jq`, and `openssl` (no Go/Ruby runtime)
 - Outputs standard `.env` files (compatible with Docker, dotenv, etc.)
@@ -30,17 +30,17 @@ built `env-to-ejson` as a lightweight alternative that:
 
 ```bash
 # 1. Generate a new keypair
-./env-to-ejson.sh gen-keys
+./ejson-to-env.sh gen-keys
 
 # 2. Save the private key securely (printed to terminal)
 #    Store it in a password manager or secure vault
 
 # 3. Add encrypted secrets
-./env-to-ejson.sh encrypt --key DB_PASSWORD --value "super_secret_123"
+./ejson-to-env.sh encrypt --key DB_PASSWORD --value "super_secret_123"
 
 # 4. Decrypt to .env when needed
 export EJ_PRIVATE_KEY="$(cat private.pem)"
-./env-to-ejson.sh decrypt
+./ejson-to-env.sh decrypt
 ```
 
 ---
@@ -73,7 +73,7 @@ variable:
 - name: Decrypt secrets
   env:
     EJ_PRIVATE_KEY: ${{ secrets.EJSON_PRIVATE_KEY }}
-  run: ./env-to-ejson.sh decrypt
+  run: ./ejson-to-env.sh decrypt
 ```
 
 ### 3. Docker and container deployments
@@ -82,9 +82,9 @@ Generate `.env` at container startup:
 
 ```dockerfile
 COPY env.ejson /app/
-COPY env-to-ejson.sh /app/
+COPY ejson-to-env.sh /app/
 
-CMD ["sh", "-c", "./env-to-ejson.sh decrypt && exec myapp"]
+CMD ["sh", "-c", "./ejson-to-env.sh decrypt && exec myapp"]
 ```
 
 ### 4. Multi-environment configuration
@@ -93,10 +93,10 @@ Maintain separate files for each environment:
 
 ```bash
 # Development
-./env-to-ejson.sh decrypt -i dev.ejson -o .env.dev
+./ejson-to-env.sh decrypt -i dev.ejson -o .env.dev
 
 # Production
-./env-to-ejson.sh decrypt -i prod.ejson -o .env.prod
+./ejson-to-env.sh decrypt -i prod.ejson -o .env.prod
 ```
 
 ### 5. Team secret sharing
@@ -116,7 +116,7 @@ Generate a new RSA keypair. The public key is stored in your ejson file; the
 private key is printed to the terminal for you to save securely.
 
 ```bash
-./env-to-ejson.sh gen-keys [options]
+./ejson-to-env.sh gen-keys [options]
 
 Options:
   --output-ejson <file>   Output file (default: env.ejson)
@@ -128,7 +128,7 @@ Options:
 Add or update an encrypted secret in your ejson file.
 
 ```bash
-./env-to-ejson.sh encrypt [options]
+./ejson-to-env.sh encrypt [options]
 
 Options:
   --input, -i <file>      Input ejson file (default: env.ejson)
@@ -140,7 +140,7 @@ Options:
 Reading from stdin avoids secrets in shell history:
 
 ```bash
-echo "my_secret" | ./env-to-ejson.sh encrypt --key API_KEY --value-stdin
+echo "my_secret" | ./ejson-to-env.sh encrypt --key API_KEY --value-stdin
 ```
 
 ### `decrypt`
@@ -148,7 +148,7 @@ echo "my_secret" | ./env-to-ejson.sh encrypt --key API_KEY --value-stdin
 Decrypt an ejson file to a standard `.env` file.
 
 ```bash
-./env-to-ejson.sh decrypt [options]
+./ejson-to-env.sh decrypt [options]
 
 Options:
   --input, -i <file>          Input ejson file (default: env.ejson)
@@ -205,7 +205,7 @@ All three are available on most Unix systems and in CI environments.
 A comprehensive test suite is included:
 
 ```bash
-./test-env-to-ejson.sh
+./test-ejson-to-env.sh
 ```
 
 ---

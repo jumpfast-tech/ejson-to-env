@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
 # -----------------------------------------------------------------------------
-# Test suite for env-to-ejson.sh
+# Test suite for ejson-to-env.sh
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT="$SCRIPT_DIR/env-to-ejson.sh"
+SCRIPT="$SCRIPT_DIR/ejson-to-env.sh"
 TEST_DIR=""
 PASSED=0
 FAILED=0
@@ -102,7 +102,7 @@ assert_exit_code() {
 test_gen_keys_creates_keypair() {
   setup
   local output
-  output="$(./env-to-ejson.sh gen-keys 2>&1)"
+  output="$(./ejson-to-env.sh gen-keys 2>&1)"
 
   assert_file_exists "env.ejson" "gen-keys creates env.ejson"
   assert_file_contains "env.ejson" "_public_key" "gen-keys adds _public_key to env.ejson"
@@ -118,7 +118,7 @@ test_gen_keys_creates_keypair() {
 test_gen_keys_updates_existing_ejson() {
   setup
   echo '{"EXISTING_KEY": "value"}' > env.ejson
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
 
   assert_file_contains "env.ejson" "_public_key" "gen-keys adds _public_key to existing file"
   assert_file_contains "env.ejson" "EXISTING_KEY" "gen-keys preserves existing keys"
@@ -127,7 +127,7 @@ test_gen_keys_updates_existing_ejson() {
 
 test_gen_keys_custom_output_file() {
   setup
-  ./env-to-ejson.sh gen-keys --output-ejson custom.ejson >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys --output-ejson custom.ejson >/dev/null 2>&1
 
   assert_file_exists "custom.ejson" "gen-keys respects --output-ejson"
   assert_file_contains "custom.ejson" "_public_key" "gen-keys writes public key to custom file"
@@ -136,7 +136,7 @@ test_gen_keys_custom_output_file() {
 
 test_gen_keys_custom_bits() {
   setup
-  ./env-to-ejson.sh gen-keys --bits 3072 >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys --bits 3072 >/dev/null 2>&1
 
   assert_file_exists "env.ejson" "gen-keys with --bits creates file"
   # Verify key is larger (3072-bit key produces longer base64)
@@ -154,7 +154,7 @@ test_gen_keys_fails_on_invalid_json() {
   setup
   echo "not valid json" > env.ejson
   local exit_code=0
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1 || exit_code=$?
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1 || exit_code=$?
 
   assert_equals "$exit_code" "1" "gen-keys fails on invalid JSON"
   teardown
@@ -164,7 +164,7 @@ test_gen_keys_fails_on_non_object_json() {
   setup
   echo '["array", "not", "object"]' > env.ejson
   local exit_code=0
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1 || exit_code=$?
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1 || exit_code=$?
 
   assert_equals "$exit_code" "1" "gen-keys fails on non-object JSON"
   teardown
@@ -175,8 +175,8 @@ test_gen_keys_fails_on_non_object_json() {
 # -----------------------------------------------------------------------------
 test_encrypt_adds_encrypted_key() {
   setup
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt --key DB_PASSWORD --value "secret123" >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key DB_PASSWORD --value "secret123" >/dev/null 2>&1
 
   assert_file_contains "env.ejson" "DB_PASSWORD" "encrypt adds key to ejson"
   assert_file_contains "env.ejson" 'EJ\[1:' "encrypt wraps value with EJ[1:...]"
@@ -185,8 +185,8 @@ test_encrypt_adds_encrypted_key() {
 
 test_encrypt_with_stdin() {
   setup
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
-  echo "secret_from_stdin" | ./env-to-ejson.sh encrypt --key API_KEY --value-stdin >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
+  echo "secret_from_stdin" | ./ejson-to-env.sh encrypt --key API_KEY --value-stdin >/dev/null 2>&1
 
   assert_file_contains "env.ejson" "API_KEY" "encrypt --value-stdin adds key"
   assert_file_contains "env.ejson" 'EJ\[1:' "encrypt --value-stdin encrypts value"
@@ -195,9 +195,9 @@ test_encrypt_with_stdin() {
 
 test_encrypt_fails_without_key() {
   setup
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
   local exit_code=0
-  ./env-to-ejson.sh encrypt --value "secret" 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh encrypt --value "secret" 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "encrypt fails without --key"
   teardown
@@ -205,9 +205,9 @@ test_encrypt_fails_without_key() {
 
 test_encrypt_fails_without_value() {
   setup
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
   local exit_code=0
-  ./env-to-ejson.sh encrypt --key MYKEY 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh encrypt --key MYKEY 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "encrypt fails without --value"
   teardown
@@ -216,7 +216,7 @@ test_encrypt_fails_without_value() {
 test_encrypt_fails_on_missing_input() {
   setup
   local exit_code=0
-  ./env-to-ejson.sh encrypt --key MYKEY --value "secret" 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh encrypt --key MYKEY --value "secret" 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "encrypt fails when input file missing"
   teardown
@@ -226,7 +226,7 @@ test_encrypt_fails_on_missing_public_key() {
   setup
   echo '{"OTHER_KEY": "value"}' > env.ejson
   local exit_code=0
-  ./env-to-ejson.sh encrypt --key MYKEY --value "secret" 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh encrypt --key MYKEY --value "secret" 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "encrypt fails when _public_key missing"
   teardown
@@ -234,8 +234,8 @@ test_encrypt_fails_on_missing_public_key() {
 
 test_encrypt_custom_input_file() {
   setup
-  ./env-to-ejson.sh gen-keys --output-ejson custom.ejson >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt -i custom.ejson --key SECRET --value "mysecret" >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys --output-ejson custom.ejson >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt -i custom.ejson --key SECRET --value "mysecret" >/dev/null 2>&1
 
   assert_file_contains "custom.ejson" "SECRET" "encrypt -i respects custom input file"
   teardown
@@ -247,10 +247,10 @@ test_encrypt_custom_input_file() {
 test_decrypt_produces_env_file() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
-  ./env-to-ejson.sh encrypt --key DB_PASSWORD --value "supersecret" >/dev/null 2>&1
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  ./ejson-to-env.sh encrypt --key DB_PASSWORD --value "supersecret" >/dev/null 2>&1
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   assert_file_exists ".env" "decrypt creates .env file"
   assert_file_contains ".env" "DB_PASSWORD" "decrypt includes key in .env"
@@ -261,12 +261,12 @@ test_decrypt_produces_env_file() {
 test_decrypt_plain_text_passthrough() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
   # Add a plain text value directly to ejson
   jq '. + {"PLAIN_KEY": "plain_value"}' env.ejson > tmp.json && mv tmp.json env.ejson
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   assert_file_contains ".env" 'PLAIN_KEY="plain_value"' "decrypt passes through plain text values"
   teardown
@@ -275,11 +275,11 @@ test_decrypt_plain_text_passthrough() {
 test_decrypt_with_private_key_file() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
   echo "$priv_key" > private.pem
-  ./env-to-ejson.sh encrypt --key SECRET --value "file_key_test" >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key SECRET --value "file_key_test" >/dev/null 2>&1
 
-  ./env-to-ejson.sh decrypt --private-key-file private.pem >/dev/null 2>&1
+  ./ejson-to-env.sh decrypt --private-key-file private.pem >/dev/null 2>&1
 
   assert_file_contains ".env" "file_key_test" "decrypt --private-key-file works"
   teardown
@@ -288,10 +288,10 @@ test_decrypt_with_private_key_file() {
 test_decrypt_custom_input_output() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys --output-ejson prod.ejson 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
-  ./env-to-ejson.sh encrypt -i prod.ejson --key TOKEN --value "custom_io_test" >/dev/null 2>&1
+  priv_key="$(./ejson-to-env.sh gen-keys --output-ejson prod.ejson 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  ./ejson-to-env.sh encrypt -i prod.ejson --key TOKEN --value "custom_io_test" >/dev/null 2>&1
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt -i prod.ejson -o .env.prod >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt -i prod.ejson -o .env.prod >/dev/null 2>&1
 
   assert_file_exists ".env.prod" "decrypt respects -o option"
   assert_file_contains ".env.prod" "custom_io_test" "decrypt writes to custom output"
@@ -300,11 +300,11 @@ test_decrypt_custom_input_output() {
 
 test_decrypt_fails_without_private_key() {
   setup
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt --key SECRET --value "test" >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key SECRET --value "test" >/dev/null 2>&1
 
   local exit_code=0
-  ./env-to-ejson.sh decrypt 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "decrypt fails without private key"
   teardown
@@ -313,7 +313,7 @@ test_decrypt_fails_without_private_key() {
 test_decrypt_fails_on_missing_input() {
   setup
   local exit_code=0
-  EJ_PRIVATE_KEY="dummy" ./env-to-ejson.sh decrypt 2>/dev/null || exit_code=$?
+  EJ_PRIVATE_KEY="dummy" ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "decrypt fails when input file missing"
   teardown
@@ -323,7 +323,7 @@ test_decrypt_fails_on_missing_public_key() {
   setup
   echo '{"SECRET": "value"}' > env.ejson
   local exit_code=0
-  EJ_PRIVATE_KEY="dummy" ./env-to-ejson.sh decrypt 2>/dev/null || exit_code=$?
+  EJ_PRIVATE_KEY="dummy" ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "decrypt fails when _public_key missing in input"
   teardown
@@ -331,15 +331,15 @@ test_decrypt_fails_on_missing_public_key() {
 
 test_decrypt_fails_with_wrong_private_key() {
   setup
-  ./env-to-ejson.sh gen-keys >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt --key SECRET --value "test" >/dev/null 2>&1
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key SECRET --value "test" >/dev/null 2>&1
 
   # Generate a different keypair
   local wrong_key
   wrong_key="$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null)"
 
   local exit_code=0
-  EJ_PRIVATE_KEY="$wrong_key" ./env-to-ejson.sh decrypt 2>/dev/null || exit_code=$?
+  EJ_PRIVATE_KEY="$wrong_key" ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "decrypt fails with wrong private key"
   teardown
@@ -348,13 +348,13 @@ test_decrypt_fails_with_wrong_private_key() {
 test_decrypt_fails_on_non_string_value() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
   # Add a non-string value
   jq '. + {"NUMBER": 123}' env.ejson > tmp.json && mv tmp.json env.ejson
 
   local exit_code=0
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt 2>/dev/null || exit_code=$?
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "decrypt fails on non-string value"
   teardown
@@ -363,9 +363,9 @@ test_decrypt_fails_on_non_string_value() {
 test_decrypt_save_private_key() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt --save-private-key saved.pem >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt --save-private-key saved.pem >/dev/null 2>&1
 
   assert_file_exists "saved.pem" "decrypt --save-private-key creates file"
   assert_file_contains "saved.pem" "BEGIN" "saved private key is valid PEM"
@@ -375,12 +375,12 @@ test_decrypt_save_private_key() {
 test_decrypt_handles_special_characters() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
   # Value with quotes, backslashes, and special chars
-  ./env-to-ejson.sh encrypt --key SPECIAL --value 'pass"word\with$pecial' >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key SPECIAL --value 'pass"word\with$pecial' >/dev/null 2>&1
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   assert_file_contains ".env" "SPECIAL=" "decrypt handles special characters"
   teardown
@@ -389,9 +389,9 @@ test_decrypt_handles_special_characters() {
 test_decrypt_excludes_public_key_from_output() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   assert_file_not_contains ".env" "_public_key" "decrypt excludes _public_key from .env"
   teardown
@@ -400,9 +400,9 @@ test_decrypt_excludes_public_key_from_output() {
 test_decrypt_adds_header_comment() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   assert_file_contains ".env" "# Generated from:" "decrypt adds header comment"
   assert_file_contains ".env" "# Do not edit directly" "decrypt adds edit warning"
@@ -415,11 +415,11 @@ test_decrypt_adds_header_comment() {
 test_default_command_is_decrypt() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
-  ./env-to-ejson.sh encrypt --key TEST --value "default_cmd" >/dev/null 2>&1
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  ./ejson-to-env.sh encrypt --key TEST --value "default_cmd" >/dev/null 2>&1
 
   # Run without specifying command
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh >/dev/null 2>&1
 
   assert_file_exists ".env" "default command is decrypt"
   assert_file_contains ".env" "default_cmd" "default decrypt works correctly"
@@ -429,7 +429,7 @@ test_default_command_is_decrypt() {
 test_help_flag() {
   setup
   local output
-  output="$(./env-to-ejson.sh --help 2>&1)"
+  output="$(./ejson-to-env.sh --help 2>&1)"
 
   if echo "$output" | grep -q "Usage:"; then
     pass "--help shows usage"
@@ -443,21 +443,21 @@ test_help_flag_for_commands() {
   setup
   local output
 
-  output="$(./env-to-ejson.sh gen-keys --help 2>&1)"
+  output="$(./ejson-to-env.sh gen-keys --help 2>&1)"
   if echo "$output" | grep -q "Usage:"; then
     pass "gen-keys --help shows usage"
   else
     fail "gen-keys --help shows usage" "Usage text" "not found"
   fi
 
-  output="$(./env-to-ejson.sh encrypt --help 2>&1)"
+  output="$(./ejson-to-env.sh encrypt --help 2>&1)"
   if echo "$output" | grep -q "Usage:"; then
     pass "encrypt --help shows usage"
   else
     fail "encrypt --help shows usage" "Usage text" "not found"
   fi
 
-  output="$(./env-to-ejson.sh decrypt --help 2>&1)"
+  output="$(./ejson-to-env.sh decrypt --help 2>&1)"
   if echo "$output" | grep -q "Usage:"; then
     pass "decrypt --help shows usage"
   else
@@ -469,7 +469,7 @@ test_help_flag_for_commands() {
 test_unknown_command_fails() {
   setup
   local exit_code=0
-  ./env-to-ejson.sh unknown-cmd 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh unknown-cmd 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "unknown command fails"
   teardown
@@ -478,7 +478,7 @@ test_unknown_command_fails() {
 test_unknown_option_fails() {
   setup
   local exit_code=0
-  ./env-to-ejson.sh decrypt --unknown-option 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh decrypt --unknown-option 2>/dev/null || exit_code=$?
 
   assert_equals "$exit_code" "1" "unknown option fails"
   teardown
@@ -492,18 +492,18 @@ test_full_round_trip() {
 
   # Generate keys
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
   # Encrypt multiple values
-  ./env-to-ejson.sh encrypt --key DB_HOST --value "localhost" >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt --key DB_USER --value "admin" >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt --key DB_PASS --value "super_secret_password_123!" >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key DB_HOST --value "localhost" >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key DB_USER --value "admin" >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key DB_PASS --value "super_secret_password_123!" >/dev/null 2>&1
 
   # Add a plain text value
   jq '. + {"DEBUG": "true"}' env.ejson > tmp.json && mv tmp.json env.ejson
 
   # Decrypt
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   # Verify all values
   assert_file_contains ".env" 'DB_HOST="localhost"' "round-trip: DB_HOST correct"
@@ -517,12 +517,12 @@ test_full_round_trip() {
 test_multiple_encrypt_same_key_overwrites() {
   setup
   local priv_key
-  priv_key="$(./env-to-ejson.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
+  priv_key="$(./ejson-to-env.sh gen-keys 2>&1 | sed -n '/-----BEGIN/,/-----END/p')"
 
-  ./env-to-ejson.sh encrypt --key PASSWORD --value "first" >/dev/null 2>&1
-  ./env-to-ejson.sh encrypt --key PASSWORD --value "second" >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key PASSWORD --value "first" >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key PASSWORD --value "second" >/dev/null 2>&1
 
-  EJ_PRIVATE_KEY="$priv_key" ./env-to-ejson.sh decrypt >/dev/null 2>&1
+  EJ_PRIVATE_KEY="$priv_key" ./ejson-to-env.sh decrypt >/dev/null 2>&1
 
   assert_file_contains ".env" 'PASSWORD="second"' "encrypting same key overwrites"
   assert_file_not_contains ".env" "first" "old value is not present"
@@ -532,7 +532,7 @@ test_multiple_encrypt_same_key_overwrites() {
 # -----------------------------------------------------------------------------
 # Run all tests
 # -----------------------------------------------------------------------------
-echo -e "${YELLOW}Running env-to-ejson.sh test suite${NC}"
+echo -e "${YELLOW}Running ejson-to-env.sh test suite${NC}"
 echo "=============================================="
 
 # gen-keys tests

@@ -31,8 +31,8 @@ jobs:
 
       - name: Make scripts executable
         run: |
-          chmod +x env-to-ejson.sh
-          chmod +x test-env-to-ejson.sh
+          chmod +x ejson-to-env.sh
+          chmod +x test-ejson-to-env.sh
 
       - name: Run tests
-        run: ./test-env-to-ejson.sh
+        run: ./test-ejson-to-env.sh
