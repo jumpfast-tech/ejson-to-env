@@ -120,14 +120,18 @@ decrypt_ejson_value() {
   local b64="${wrapped#EJ[1:}"
   b64="${b64%]}"
 
-  # base64 decode -> RSA decrypt
-  # NOTE: This expects the ciphertext was created using RSA public-key encryption.
+  # base64 decode -> RSA-OAEP decrypt
+  # OAEP padding ensures decryption fails (non-zero exit) with the wrong key.
   local decrypted
-  decrypted="$(
+  if ! decrypted="$(
     printf '%s' "$b64" \
       | openssl base64 -d -A 2>/dev/null \
-      | openssl pkeyutl -decrypt -inkey <(printf '%s' "$PRIVATE_KEY_PEM") 2>/dev/null
-  )" || true
+      | openssl pkeyutl -decrypt \
+          -inkey <(printf '%s' "$PRIVATE_KEY_PEM") \
+          -pkeyopt rsa_padding_mode:oaep 2>/dev/null
+  )"; then
+    return 1
+  fi
 
   [[ -n "$decrypted" ]] || return 1
   printf '%s' "$decrypted"
@@ -257,7 +261,9 @@ cmd_encrypt() {
       local enc_b64
       enc_b64="$(
         printf '%s' "$v" \
-          | openssl pkeyutl -encrypt -pubin -inkey <(printf '%s' "$pub_key") 2>/dev/null \
+          | openssl pkeyutl -encrypt -pubin \
+              -inkey <(printf '%s' "$pub_key") \
+              -pkeyopt rsa_padding_mode:oaep 2>/dev/null \
           | openssl base64 -A
       )"
 
@@ -295,10 +301,12 @@ cmd_encrypt() {
     exit 1
   fi
 
-  # Encrypt with public key (RSA) -> base64 -> wrap as EJ[1:...]
+  # Encrypt with public key (RSA-OAEP) -> base64 -> wrap as EJ[1:...]
   enc_b64="$(
     printf '%s' "$value" \
-      | openssl pkeyutl -encrypt -pubin -inkey <(printf '%s' "$pub_key") 2>/dev/null \
+      | openssl pkeyutl -encrypt -pubin \
+          -inkey <(printf '%s' "$pub_key") \
+          -pkeyopt rsa_padding_mode:oaep 2>/dev/null \
       | openssl base64 -A
   )"
 
@@ -382,29 +390,28 @@ cmd_decrypt() {
     echo "# Do not edit directly. Edit $INPUT instead."
     echo
 
-    jq -c 'to_entries[] | select(.key != "_public_key")' "$INPUT" \
-      | while IFS= read -r entry; do
-          key="$(jq -r '.key' <<<"$entry")"
-          val_type="$(jq -r '.value | type' <<<"$entry")"
+    while IFS= read -r entry; do
+      key="$(jq -r '.key' <<<"$entry")"
+      val_type="$(jq -r '.value | type' <<<"$entry")"
 
-          if [[ "$val_type" != "string" ]]; then
-            echo "❌ Non-string value for key '$key'. Only string values supported." >&2
-            exit 1
-          fi
+      if [[ "$val_type" != "string" ]]; then
+        echo "❌ Non-string value for key '$key'. Only string values supported." >&2
+        exit 1
+      fi
 
-          value="$(jq -r '.value' <<<"$entry")"
+      value="$(jq -r '.value' <<<"$entry")"
 
-          if is_ejson_wrapped "$value"; then
-            plain="$(decrypt_ejson_value "$value" || true)"
-            if [[ -z "$plain" ]]; then
-              echo "❌ Failed to decrypt key '$key' (wrong key or corrupted value)" >&2
-              exit 1
-            fi
-            printf "%s=%s\n" "$key" "$(quote_env_value "$plain")"
-          else
-            printf "%s=%s\n" "$key" "$(quote_env_value "$value")"
-          fi
-        done
+      if is_ejson_wrapped "$value"; then
+        plain="$(decrypt_ejson_value "$value" || true)"
+        if [[ -z "$plain" ]]; then
+          echo "❌ Failed to decrypt key '$key' (wrong key or corrupted value)" >&2
+          exit 1
+        fi
+        printf "%s=%s\n" "$key" "$(quote_env_value "$plain")"
+      else
+        printf "%s=%s\n" "$key" "$(quote_env_value "$value")"
+      fi
+    done < <(jq -c 'to_entries[] | select(.key != "_public_key")' "$INPUT")
   } > "$tmp_out"
 
   mv "$tmp_out" "$OUTPUT"
