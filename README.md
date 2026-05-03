@@ -1,7 +1,14 @@
 # ejson-to-env
 
 A minimal, dependency-light bash tool for managing encrypted environment
-variables using RSA public/private key pairs.
+variables. Supports two encryption modes:
+
+| Mode | Best for | Key material |
+|------|----------|--------------|
+| **RSA** (asymmetric) | Teams — anyone can encrypt, only key-holder decrypts | `gen-keys` → store private key in vault |
+| **Passphrase** (symmetric) | Solo / simple deployments | Shared passphrase via `EP_PASSPHRASE` |
+
+A single file can contain both `EJ[1:...]` (RSA) and `EP[1:...]` (passphrase) values; `decrypt` handles each automatically.
 
 **Author:** JumpFast Technologies
 
@@ -21,7 +28,7 @@ built `ejson-to-env` as a lightweight alternative that:
 
 - Requires only `bash`, `jq`, and `openssl` (no Go/Ruby runtime)
 - Outputs standard `.env` files (compatible with Docker, dotenv, etc.)
-- Uses familiar RSA encryption under the hood
+- Supports both RSA (asymmetric) and passphrase (symmetric) encryption
 - Fits in a single portable shell script
 
 ---
@@ -144,20 +151,35 @@ Available tags: `latest`, `1`, `1.0`, `1.0.0` (semver on each release).
 
 ## Quick Start
 
+### RSA mode (asymmetric — recommended for teams)
+
 ```bash
-# 1. Generate a new keypair
+# 1. Generate a keypair (public key stored in env.ejson, private key printed)
 ejson-to-env gen-keys
 
-# 2. Save the private key securely (printed to terminal)
-#    Store it in a password manager or secure vault
+# 2. Store the private key securely (password manager, vault, CI secret)
 
-# 3. Add encrypted secrets (one key at a time, or all at once)
+# 3. Encrypt secrets
 ejson-to-env encrypt --key DB_PASSWORD --value "super_secret_123"
-ejson-to-env encrypt --all   # encrypts every plain-text value in the file
+ejson-to-env encrypt --all   # encrypt every plain-text value at once
 
-# 4. Decrypt to .env when needed
+# 4. Decrypt
 export EJ_PRIVATE_KEY="$(cat private.pem)"
 ejson-to-env decrypt
+```
+
+### Passphrase mode (symmetric — good for solo / simple deployments)
+
+No key generation needed. Just set a passphrase and go:
+
+```bash
+# 1. Encrypt secrets
+export EP_PASSPHRASE="my-strong-passphrase"
+ejson-to-env encrypt --key DB_PASSWORD --value "super_secret_123"
+ejson-to-env encrypt --all   # encrypt every plain-text value at once
+
+# 2. Decrypt
+EP_PASSPHRASE="my-strong-passphrase" ejson-to-env decrypt
 ```
 
 ---
@@ -251,65 +273,93 @@ Add or update an encrypted secret in your ejson file.
 ejson-to-env encrypt [options]
 
 Options:
-  --input, -i <file>      Input ejson file (default: env.ejson)
-  --all                   Encrypt every plain-text value in the file at once
-  --key <name>            Environment variable name (required without --all)
-  --value <secret>        Secret value to encrypt
-  --value-stdin           Read secret from stdin (recommended for scripts)
+  --input, -i <file>       Input ejson file (default: env.ejson)
+  --all                    Encrypt every plain-text value at once
+  --key <name>             Environment variable name (required without --all)
+  --value <secret>         Secret value to encrypt
+  --value-stdin            Read secret from stdin (keeps it out of shell history)
+  --passphrase-file <file> Read passphrase from file (passphrase mode)
 ```
 
-**Encrypt all plain-text values at once** — useful when you have an existing
-file with unencrypted values and want to lock it down in one step:
+**Encrypt mode is determined automatically:**
+- If `EP_PASSPHRASE` or `--passphrase-file` is set → passphrase mode (`EP[1:...]`)
+- Otherwise → RSA mode (requires `_public_key` in the file) (`EJ[1:...]`)
+
+**Encrypt all plain-text values at once:**
 
 ```bash
+# RSA mode
 ejson-to-env encrypt --all
+
+# Passphrase mode
+EP_PASSPHRASE="my-passphrase" ejson-to-env encrypt --all
 ```
 
-This skips `_public_key` and any values already wrapped as `EJ[1:...]`, so
-it's safe to run repeatedly.
+Skips any value already wrapped as `EJ[1:...]` or `EP[1:...]` — safe to run repeatedly.
 
 **Encrypt a single key:**
 
 ```bash
 ejson-to-env encrypt --key DB_PASSWORD --value "super_secret"
 
-# Recommended: read from stdin to keep secrets out of shell history
+# Read from stdin to keep secrets out of shell history
 echo "super_secret" | ejson-to-env encrypt --key DB_PASSWORD --value-stdin
+
+# Passphrase mode
+EP_PASSPHRASE="my-passphrase" ejson-to-env encrypt --key DB_PASSWORD --value "super_secret"
 ```
 
 ### `decrypt`
 
-Decrypt an ejson file to a standard `.env` file.
+Decrypt an ejson file to a standard `.env` file. Auto-detects `EJ[1:...]`
+(RSA) and `EP[1:...]` (passphrase) values — a file may contain both.
 
 ```bash
 ejson-to-env decrypt [options]
 
 Options:
-  --input, -i <file>          Input ejson file (default: env.ejson)
-  --output, -o <file>         Output .env file (default: .env)
-  --private-key-file <file>   Read private key from file
-  --save-private-key <file>   Save EJ_PRIVATE_KEY to file (chmod 600)
+  --input, -i <file>           Input ejson file (default: env.ejson)
+  --output, -o <file>          Output .env file (default: .env)
+  --private-key-file <file>    RSA private key PEM file
+  --save-private-key <file>    Save EJ_PRIVATE_KEY to file (chmod 600)
+  --passphrase-file <file>     Read passphrase from file (passphrase mode)
 ```
 
-The private key can be provided via:
-- `EJ_PRIVATE_KEY` environment variable (recommended)
-- `--private-key-file` flag
+Key material via environment variables:
+- `EJ_PRIVATE_KEY` — RSA private key PEM (for `EJ[1:...]` values)
+- `EP_PASSPHRASE` — passphrase (for `EP[1:...]` values)
 
 ---
 
-## EJSON File Format
+## File Format
+
+### RSA mode
 
 ```json
 {
   "_public_key": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
-  "SECRET_KEY": "EJ[1:base64_encrypted_data]",
+  "SECRET_KEY": "EJ[1:base64_rsa_oaep_encrypted]",
   "PLAIN_KEY": "unencrypted values are fine too"
 }
 ```
 
-- `_public_key`: Required. RSA public key in PEM format.
-- `EJ[1:...]`: Encrypted values (RSA + base64 encoded).
-- Plain strings: Passed through as-is to the output `.env` file.
+- `_public_key`: RSA public key in PEM format (required for `encrypt` only).
+
+### Passphrase mode
+
+```json
+{
+  "SECRET_KEY": "EP[1:base64_aes256cbc_pbkdf2_encrypted]",
+  "PLAIN_KEY": "unencrypted values are fine too"
+}
+```
+
+No `_public_key` needed. The passphrase is never stored in the file.
+
+### Mixed
+
+A file can contain both `EJ[1:...]` and `EP[1:...]` values. `decrypt` will
+use whichever credential applies to each value.
 
 ---
 
@@ -317,7 +367,7 @@ The private key can be provided via:
 
 - `bash` (4.0+)
 - `jq` (JSON processor)
-- `openssl` (for RSA operations)
+- `openssl` (for RSA and AES operations)
 
 All three are available on most Unix systems and in CI environments.
 
@@ -325,12 +375,16 @@ All three are available on most Unix systems and in CI environments.
 
 ## Security Notes
 
-- **Never commit private keys.** Store them in a secrets manager, vault, or
-  secure environment variable.
-- **Rotate keys periodically.** Generate new keypairs and re-encrypt secrets
-  as part of your security hygiene.
-- **RSA key size:** Default is 2048 bits. Use `--bits 3072` or higher for
-  stronger encryption if needed.
+- **Never commit private keys or passphrases.** Store them in a secrets
+  manager, vault, or secure environment variable.
+- **RSA mode:** Uses RSA-OAEP (SHA-1) for encryption. Default key size is
+  2048 bits; use `--bits 3072` for stronger keys. Decryption with the wrong
+  key fails immediately.
+- **Passphrase mode:** Uses AES-256-CBC with PBKDF2-SHA256 (310,000
+  iterations). A `EJPP` magic prefix is embedded in each ciphertext so
+  decryption with the wrong passphrase is detected and rejected.
+- **Rotate secrets periodically.** For RSA: `gen-keys` + `encrypt --all`.
+  For passphrase: update `EP_PASSPHRASE` and re-run `encrypt --all`.
 
 ---
 

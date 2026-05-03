@@ -319,13 +319,17 @@ test_decrypt_fails_on_missing_input() {
   teardown
 }
 
-test_decrypt_fails_on_missing_public_key() {
+test_decrypt_fails_rsa_value_without_private_key() {
+  # _public_key is no longer required for decrypt; but an RSA-encrypted
+  # value without a private key must still fail.
   setup
-  echo '{"SECRET": "value"}' > env.ejson
-  local exit_code=0
-  EJ_PRIVATE_KEY="dummy" ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
+  ./ejson-to-env.sh gen-keys >/dev/null 2>&1
+  ./ejson-to-env.sh encrypt --key SECRET --value "test" >/dev/null 2>&1
 
-  assert_equals "$exit_code" "1" "decrypt fails when _public_key missing in input"
+  local exit_code=0
+  ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
+
+  assert_equals "$exit_code" "1" "decrypt fails for RSA value without private key"
   teardown
 }
 
@@ -530,6 +534,80 @@ test_multiple_encrypt_same_key_overwrites() {
 }
 
 # -----------------------------------------------------------------------------
+# Test: passphrase mode
+# -----------------------------------------------------------------------------
+test_passphrase_encrypt_wraps_ep() {
+  setup
+  echo '{}' > env.ejson
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh encrypt --key API_KEY --value "abc123" >/dev/null 2>&1
+  assert_file_contains "env.ejson" 'EP\[1:' "passphrase encrypt wraps value with EP[1:...]"
+  teardown
+}
+
+test_passphrase_round_trip() {
+  setup
+  echo '{}' > env.ejson
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh encrypt --key API_KEY --value "abc123" >/dev/null 2>&1
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh decrypt >/dev/null 2>&1
+  assert_file_contains ".env" 'API_KEY="abc123"' "passphrase round-trip decrypts correctly"
+  teardown
+}
+
+test_passphrase_wrong_passphrase_fails() {
+  setup
+  echo '{}' > env.ejson
+  EP_PASSPHRASE="correct" ./ejson-to-env.sh encrypt --key SECRET --value "value" >/dev/null 2>&1
+  local exit_code=0
+  EP_PASSPHRASE="wrong" ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
+  assert_equals "$exit_code" "1" "passphrase decrypt fails with wrong passphrase"
+  teardown
+}
+
+test_passphrase_missing_passphrase_fails() {
+  setup
+  echo '{}' > env.ejson
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh encrypt --key SECRET --value "value" >/dev/null 2>&1
+  local exit_code=0
+  ./ejson-to-env.sh decrypt 2>/dev/null || exit_code=$?
+  assert_equals "$exit_code" "1" "passphrase decrypt fails when passphrase not set"
+  teardown
+}
+
+test_passphrase_encrypt_all() {
+  setup
+  echo '{"DB_PASS": "secret", "API_KEY": "key123", "DEBUG": "true"}' > env.ejson
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh encrypt --all >/dev/null 2>&1
+  assert_file_contains "env.ejson" 'EP\[1:' "passphrase --all wraps values with EP[1:...]"
+
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh decrypt >/dev/null 2>&1
+  assert_file_contains ".env" 'DB_PASS="secret"'   "passphrase --all round-trip: DB_PASS"
+  assert_file_contains ".env" 'API_KEY="key123"'   "passphrase --all round-trip: API_KEY"
+  assert_file_contains ".env" 'DEBUG="true"'        "passphrase --all round-trip: DEBUG"
+  teardown
+}
+
+test_passphrase_file_flag() {
+  setup
+  echo '{}' > env.ejson
+  local pf
+  pf="$(mktemp)"
+  printf 'filepass' > "$pf"
+  ./ejson-to-env.sh encrypt --key FOO --value "bar" --passphrase-file "$pf" >/dev/null 2>&1
+  ./ejson-to-env.sh decrypt --passphrase-file "$pf" >/dev/null 2>&1
+  assert_file_contains ".env" 'FOO="bar"' "passphrase-file encrypt/decrypt round-trip"
+  rm -f "$pf"
+  teardown
+}
+
+test_passphrase_plain_values_pass_through() {
+  setup
+  echo '{"PLAIN": "hello"}' > env.ejson
+  EP_PASSPHRASE="mysecret" ./ejson-to-env.sh decrypt >/dev/null 2>&1
+  assert_file_contains ".env" 'PLAIN="hello"' "passphrase mode passes through plain values"
+  teardown
+}
+
+# -----------------------------------------------------------------------------
 # Run all tests
 # -----------------------------------------------------------------------------
 echo -e "${YELLOW}Running ejson-to-env.sh test suite${NC}"
@@ -559,7 +637,7 @@ test_decrypt_with_private_key_file
 test_decrypt_custom_input_output
 test_decrypt_fails_without_private_key
 test_decrypt_fails_on_missing_input
-test_decrypt_fails_on_missing_public_key
+test_decrypt_fails_rsa_value_without_private_key
 test_decrypt_fails_with_wrong_private_key
 test_decrypt_fails_on_non_string_value
 test_decrypt_save_private_key
@@ -573,6 +651,15 @@ test_help_flag
 test_help_flag_for_commands
 test_unknown_command_fails
 test_unknown_option_fails
+
+# passphrase tests
+test_passphrase_encrypt_wraps_ep
+test_passphrase_round_trip
+test_passphrase_wrong_passphrase_fails
+test_passphrase_missing_passphrase_fails
+test_passphrase_encrypt_all
+test_passphrase_file_flag
+test_passphrase_plain_values_pass_through
 
 # integration tests
 test_full_round_trip
