@@ -49,8 +49,16 @@ Commands:
                       - Writes _public_key into env.ejson (default)
                       - Prints private key to terminal
 
-  encrypt             Add/replace one encrypted key inside env.ejson
+  encrypt             Add/replace one encrypted key inside env.ejson, or use
+                      --all to encrypt every plain-text value at once
   decrypt             Decrypt env.ejson -> .env (default command)
+
+Options (encrypt):
+  --input, -i <file>          Input EJSON file (default: env.ejson)
+  --all                       Encrypt every plain-text value in the file at once
+  --key <name>                Key to encrypt (single-key mode)
+  --value <secret>            Value to encrypt
+  --value-stdin               Read value from stdin
 
 Options (decrypt):
   --input, -i <file>          Input EJSON file (default: env.ejson)
@@ -71,6 +79,9 @@ Examples:
 
   # Same (default command is decrypt)
   EJ_PRIVATE_KEY="\$(cat private.pem)" ./ejson-to-env.sh
+
+  # Encrypt every plain-text value in the file at once
+  ./ejson-to-env.sh encrypt --all
 
   # Custom input/output
   EJ_PRIVATE_KEY="\$(cat private.pem)" ./ejson-to-env.sh decrypt --input prod.ejson --output .env.prod
@@ -140,9 +151,9 @@ cmd_gen_keys() {
 
   # Cleanup safely even if some files were never created
   cleanup_genkeys() {
-    [[ -n "${tmp_priv:-}" && -f "$tmp_priv" ]] && rm -f "$tmp_priv"
-    [[ -n "${tmp_pub:-}"  && -f "$tmp_pub"  ]] && rm -f "$tmp_pub"
-    [[ -n "${tmp_json:-}" && -f "$tmp_json" ]] && rm -f "$tmp_json"
+    if [[ -n "${tmp_priv:-}" && -f "$tmp_priv" ]]; then rm -f "$tmp_priv"; fi
+    if [[ -n "${tmp_pub:-}"  && -f "$tmp_pub"  ]]; then rm -f "$tmp_pub";  fi
+    if [[ -n "${tmp_json:-}" && -f "$tmp_json" ]]; then rm -f "$tmp_json"; fi
   }
   trap cleanup_genkeys EXIT
 
@@ -201,6 +212,7 @@ cmd_encrypt() {
   local key="${ENCRYPT_KEY:-}"
   local value="${ENCRYPT_VALUE:-}"
   local use_stdin="${ENCRYPT_VALUE_STDIN:-false}"
+  local encrypt_all="${ENCRYPT_ALL:-false}"
 
   if [[ ! -f "$INPUT" ]]; then
     echo "❌ Input file not found: $INPUT" >&2
@@ -214,13 +226,67 @@ cmd_encrypt() {
     exit 1
   fi
 
+  # ---------------------------
+  # --all: encrypt every plain-text value in the file
+  # ---------------------------
+  if [[ "$encrypt_all" == "true" ]]; then
+    local tmp_json=""
+    cleanup_encrypt_all() {
+      if [[ -n "${tmp_json:-}" && -f "$tmp_json" ]]; then rm -f "$tmp_json"; fi
+    }
+    trap cleanup_encrypt_all EXIT
+    tmp_json="$(mktemp)"
+
+    # Start from the current file; accumulate encrypted keys into it
+    cp "$INPUT" "$tmp_json"
+
+    local count=0
+    local skipped=0
+
+    while IFS= read -r entry; do
+      local k v
+      k="$(jq -r '.key' <<<"$entry")"
+      v="$(jq -r '.value' <<<"$entry")"
+
+      # Skip _public_key and already-encrypted values
+      if [[ "$k" == "_public_key" ]] || is_ejson_wrapped "$v"; then
+        skipped=$(( skipped + 1 ))
+        continue
+      fi
+
+      local enc_b64
+      enc_b64="$(
+        printf '%s' "$v" \
+          | openssl pkeyutl -encrypt -pubin -inkey <(printf '%s' "$pub_key") 2>/dev/null \
+          | openssl base64 -A
+      )"
+
+      if [[ -z "$enc_b64" ]]; then
+        echo "❌ Encryption failed for key '$k'" >&2
+        exit 1
+      fi
+
+      local next
+      next="$(mktemp)"
+      jq --arg k "$k" --arg v "EJ[1:$enc_b64]" '.[$k] = $v' "$tmp_json" > "$next"
+      mv "$next" "$tmp_json"
+      count=$(( count + 1 ))
+    done < <(jq -c 'to_entries[]' "$INPUT")
+
+    mv "$tmp_json" "$INPUT"
+    echo "✅ Encrypted $count key(s) in $INPUT (skipped $skipped already-encrypted)"
+    return
+  fi
+
+  # ---------------------------
+  # Single-key mode
+  # ---------------------------
   if [[ -z "$key" ]]; then
-    echo "❌ --key is required" >&2
+    echo "❌ --key is required (or use --all to encrypt every plain-text value)" >&2
     exit 1
   fi
 
   if [[ "$use_stdin" == "true" ]]; then
-    # Read secret from stdin (recommended)
     IFS= read -r value
   fi
 
@@ -244,7 +310,7 @@ cmd_encrypt() {
   # Write back to env.ejson atomically
   local tmp_json=""
   cleanup_encrypt() {
-    [[ -n "${tmp_json:-}" && -f "$tmp_json" ]] && rm -f "$tmp_json"
+    if [[ -n "${tmp_json:-}" && -f "$tmp_json" ]]; then rm -f "$tmp_json"; fi
   }
   trap cleanup_encrypt EXIT
   tmp_json="$(mktemp)"
@@ -305,7 +371,7 @@ cmd_decrypt() {
   # Write output atomically
   local tmp_out=""
   cleanup_decrypt() {
-    [[ -n "${tmp_out:-}" && -f "$tmp_out" ]] && rm -f "$tmp_out"
+    if [[ -n "${tmp_out:-}" && -f "$tmp_out" ]]; then rm -f "$tmp_out"; fi
   }
   trap cleanup_decrypt EXIT
 
@@ -365,6 +431,7 @@ while [[ $# -gt 0 ]]; do
     encrypt)
       case "$1" in
         --input|-i) INPUT="${2:-}"; shift 2 ;;
+        --all) ENCRYPT_ALL="true"; shift 1 ;;
         --key) ENCRYPT_KEY="${2:-}"; shift 2 ;;
         --value) ENCRYPT_VALUE="${2:-}"; shift 2 ;;
         --value-stdin) ENCRYPT_VALUE_STDIN="true"; shift 1 ;;

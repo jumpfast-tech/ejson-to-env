@@ -151,8 +151,9 @@ ejson-to-env gen-keys
 # 2. Save the private key securely (printed to terminal)
 #    Store it in a password manager or secure vault
 
-# 3. Add encrypted secrets
+# 3. Add encrypted secrets (one key at a time, or all at once)
 ejson-to-env encrypt --key DB_PASSWORD --value "super_secret_123"
+ejson-to-env encrypt --all   # encrypts every plain-text value in the file
 
 # 4. Decrypt to .env when needed
 export EJ_PRIVATE_KEY="$(cat private.pem)"
@@ -251,15 +252,29 @@ ejson-to-env encrypt [options]
 
 Options:
   --input, -i <file>      Input ejson file (default: env.ejson)
-  --key <name>            Environment variable name (required)
+  --all                   Encrypt every plain-text value in the file at once
+  --key <name>            Environment variable name (required without --all)
   --value <secret>        Secret value to encrypt
   --value-stdin           Read secret from stdin (recommended for scripts)
 ```
 
-Reading from stdin avoids secrets in shell history:
+**Encrypt all plain-text values at once** — useful when you have an existing
+file with unencrypted values and want to lock it down in one step:
 
 ```bash
-echo "my_secret" | ejson-to-env encrypt --key API_KEY --value-stdin
+ejson-to-env encrypt --all
+```
+
+This skips `_public_key` and any values already wrapped as `EJ[1:...]`, so
+it's safe to run repeatedly.
+
+**Encrypt a single key:**
+
+```bash
+ejson-to-env encrypt --key DB_PASSWORD --value "super_secret"
+
+# Recommended: read from stdin to keep secrets out of shell history
+echo "super_secret" | ejson-to-env encrypt --key DB_PASSWORD --value-stdin
 ```
 
 ### `decrypt`
