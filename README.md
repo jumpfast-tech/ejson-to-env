@@ -28,25 +28,117 @@ built `ejson-to-env` as a lightweight alternative that:
 
 ## Installation
 
+### Local / macOS / Linux
+
 ```bash
 git clone https://github.com/jumpfast-tech/ejson-to-env.git
 cd ejson-to-env
 make install        # installs to /usr/local/bin/ejson-to-env
 ```
 
-To install to a custom location (e.g. `~/.local/bin`):
+Custom prefix (e.g. `~/.local/bin`):
 
 ```bash
 make install PREFIX=~/.local
 ```
 
-To uninstall:
+Uninstall:
 
 ```bash
 make uninstall
 ```
 
-After installation, use `ejson-to-env` instead of `./ejson-to-env.sh` from any directory.
+### One-liner (any Unix system)
+
+Downloads the latest release asset directly — no git clone needed:
+
+```bash
+curl -fsSL https://github.com/jumpfast-tech/ejson-to-env/releases/latest/download/ejson-to-env \
+  -o /usr/local/bin/ejson-to-env && chmod +x /usr/local/bin/ejson-to-env
+```
+
+### GitHub Actions
+
+Use the action directly in any workflow — no install step required:
+
+```yaml
+- name: Decrypt secrets
+  uses: jumpfast-tech/ejson-to-env@v1
+  with:
+    private-key: ${{ secrets.EJSON_PRIVATE_KEY }}
+    # ejson-file: env.ejson   (default)
+    # output-file: .env       (default)
+```
+
+The action reads `env.ejson` and writes `.env` in your workspace.
+
+### AWS CodeBuild
+
+Add this to your `buildspec.yml` install phase:
+
+```yaml
+phases:
+  install:
+    commands:
+      - curl -fsSL https://github.com/jumpfast-tech/ejson-to-env/releases/latest/download/ejson-to-env
+          -o /usr/local/bin/ejson-to-env
+      - chmod +x /usr/local/bin/ejson-to-env
+  pre_build:
+    commands:
+      - ejson-to-env decrypt
+```
+
+Store the private key in AWS Secrets Manager or Parameter Store and inject it
+as an environment variable named `EJ_PRIVATE_KEY`.
+
+### GCP Cloud Build
+
+```yaml
+steps:
+  - name: alpine
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        apk add --no-cache curl jq openssl
+        curl -fsSL https://github.com/jumpfast-tech/ejson-to-env/releases/latest/download/ejson-to-env \
+          -o /usr/local/bin/ejson-to-env
+        chmod +x /usr/local/bin/ejson-to-env
+        ejson-to-env decrypt
+    secretEnv:
+      - EJ_PRIVATE_KEY
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/ejson-private-key/versions/latest
+      env: EJ_PRIVATE_KEY
+```
+
+### Docker
+
+A pre-built image is published to the GitHub Container Registry on every
+release:
+
+```bash
+# Decrypt env.ejson -> .env in the current directory
+docker run --rm \
+  -e EJ_PRIVATE_KEY="$(cat private.pem)" \
+  -v "$PWD:/work" -w /work \
+  ghcr.io/jumpfast-tech/ejson-to-env decrypt
+```
+
+Or use it as a base/stage in your own Dockerfile:
+
+```dockerfile
+FROM ghcr.io/jumpfast-tech/ejson-to-env:latest AS secrets
+COPY env.ejson /work/
+RUN ejson-to-env decrypt --input /work/env.ejson --output /work/.env
+
+FROM your-app-image
+COPY --from=secrets /work/.env .
+```
+
+Available tags: `latest`, `1`, `1.0`, `1.0.0` (semver on each release).
 
 ---
 
@@ -93,23 +185,25 @@ In your deployment pipeline, inject the private key as a secret environment
 variable:
 
 ```yaml
-# GitHub Actions example
+# GitHub Actions — using the published action (recommended)
 - name: Decrypt secrets
-  env:
-    EJ_PRIVATE_KEY: ${{ secrets.EJSON_PRIVATE_KEY }}
-  run: ejson-to-env decrypt
+  uses: jumpfast-tech/ejson-to-env@v1
+  with:
+    private-key: ${{ secrets.EJSON_PRIVATE_KEY }}
 ```
 
 ### 3. Docker and container deployments
 
-Generate `.env` at container startup:
+Generate `.env` at container startup using the published image:
 
 ```dockerfile
-COPY env.ejson /app/
-RUN curl -fsSL https://github.com/jumpfast-tech/ejson-to-env/raw/main/ejson-to-env.sh \
-    -o /usr/local/bin/ejson-to-env && chmod +x /usr/local/bin/ejson-to-env
+FROM ghcr.io/jumpfast-tech/ejson-to-env:latest AS secrets
+COPY env.ejson /work/
+RUN ejson-to-env decrypt --input /work/env.ejson --output /work/.env
 
-CMD ["sh", "-c", "ejson-to-env decrypt && exec myapp"]
+FROM your-app-image
+COPY --from=secrets /work/.env .
+CMD ["myapp"]
 ```
 
 ### 4. Multi-environment configuration

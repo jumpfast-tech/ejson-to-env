@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write       # create GitHub releases + upload assets
+  packages: write       # push to ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 1. Publish the script as a GitHub Release asset
+      #    Lets any CI (AWS CodeBuild, GCP Cloud Build, etc.) install via curl:
+      #      curl -fsSL .../releases/latest/download/ejson-to-env | install ...
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ejson-to-env.sh
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+
+      # Rename the asset to `ejson-to-env` (no .sh) so the curl one-liner works
+      - name: Upload bare binary asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp ejson-to-env.sh ejson-to-env
+          gh release upload "${{ github.ref_name }}" ejson-to-env --clobber
+
+      # -----------------------------------------------------------------------
+      # 2. Build and push Docker image to GitHub Container Registry (ghcr.io)
+      # -----------------------------------------------------------------------
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

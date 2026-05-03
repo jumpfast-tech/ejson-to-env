@@ -1,0 +1,33 @@
+name: ejson-to-env
+description: Decrypt an EJSON file into a .env file using an RSA private key
+author: JumpFast Technologies
+
+inputs:
+  ejson-file:
+    description: Path to the EJSON file
+    required: false
+    default: env.ejson
+  output-file:
+    description: Path to write the decrypted .env file
+    required: false
+    default: .env
+  private-key:
+    description: RSA private key PEM (use a repository/org secret)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Decrypt EJSON
+      shell: bash
+      env:
+        EJ_PRIVATE_KEY: ${{ inputs.private-key }}
+      run: |
+        chmod +x "${{ github.action_path }}/ejson-to-env.sh"
+        "${{ github.action_path }}/ejson-to-env.sh" decrypt \
+          --input "${{ inputs.ejson-file }}" \
+          --output "${{ inputs.output-file }}"
+
+branding:
+  icon: lock
+  color: green
